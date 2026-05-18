@@ -13,7 +13,28 @@ export const useAuthStore = defineStore('auth', {
 
     getters: {
         isAuthenticated: state => !!state.token,
-        isSuperAdmin: state => state.user?.type === 'super_admin',
+
+        isSuperAdmin: state =>
+            state.user?.type === 'super_admin',
+
+        isAgent: state =>
+            state.user?.type === 'agent',
+
+        isSubAgent: state =>
+            state.user?.type === 'sub_agent',
+
+        isAgentLevel: state =>
+            state.user?.is_agent_level === true,
+
+        isAgencyLevel: state =>
+            state.user?.is_agency_level === true,
+
+        isAgencyStaff: state =>
+            state.user?.is_agency_staff === true,
+
+        isAgentStaff: state =>
+            state.user?.is_agent_staff === true,
+
         hasPermission: state => permission => {
             if (!state.user) return false
             if (state.user.type === 'super_admin') return true

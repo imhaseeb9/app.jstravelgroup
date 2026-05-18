@@ -1,12 +1,16 @@
 <script setup>
 import LandingInput from '@/components/landing/shared/LandingInput.vue'
 import { useAuthStore } from '@/stores/auth'
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
 const authStore = useAuthStore()
-
+onMounted(() => {
+    if (!authStore.otpEmail) {
+        router.push('/login')
+    }
+})
 const otp = ref('')
 const errorMessage = ref('')
 const resendLoading = ref(false)

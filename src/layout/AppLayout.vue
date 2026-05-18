@@ -1,12 +1,12 @@
 <script setup>
 import { useLayout } from '@/layout/composables/layout';
-import { computed } from 'vue';
+import { useNotificationsStore } from '@/stores/notifications';
+import { computed, onMounted, onUnmounted } from 'vue';
 import AppBreadcrumb from './AppBreadcrumb.vue';
 import AppHeader from './AppHeader.vue';
 import AppSidebar from './AppSidebar.vue';
-
 const { layoutConfig, layoutState, hideMobileMenu } = useLayout();
-
+const notificationsStore = useNotificationsStore()
 const containerClass = computed(() => {
     return [
         `layout-sidebar-${layoutConfig.darkTheme ? 'dark' : 'light'}`,
@@ -26,6 +26,13 @@ const containerClass = computed(() => {
         }
     ];
 });
+onMounted(() => {
+    notificationsStore.startPolling()
+})
+
+onUnmounted(() => {
+    notificationsStore.stopPolling()
+})
 </script>
 
 <template>
