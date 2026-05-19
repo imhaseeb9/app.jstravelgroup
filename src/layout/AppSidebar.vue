@@ -164,7 +164,6 @@ onBeforeUnmount(() => {
         <div class="sidebar-header">
             <router-link to="/" class="logo">
                 <Logo class="logo-image" />
-                <span class="app-name">JS Travel Group</span>
             </router-link>
             <button class="layout-sidebar-anchor" type="button" @click="onAnchorToggle" />
         </div>

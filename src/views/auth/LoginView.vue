@@ -38,15 +38,15 @@ const handleLogin = async () => {
         <!-- Logo -->
         <div class="flex items-center justify-center mb-8">
             <img
-                src="/images/logo-login.svg"
+                src="/images/logo.svg"
                 alt="JS Travel Group"
                 class="h-32 w-auto"
             />
         </div>
 
-        <!--<h1 class="text-4xl md:text-5xl font-medium text-center mx-auto leading-[125%]">
+        <h1 class="text-4xl md:text-5xl font-medium text-center mx-auto leading-[125%]">
             Welcome Back
-        </h1>-->
+        </h1>
         <p class="text-lg text-surface-500 leading-6 mt-4 text-center mx-auto">
             B2B Travel Portal — Sign in to continue
         </p>
