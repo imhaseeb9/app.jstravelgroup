@@ -298,6 +298,16 @@ onMounted(() => fetchRequests())
                     </small>
                 </div>
 
+                <div class="p-3 rounded-xl bg-surface-50 dark:bg-surface-800 border border-surface-200 dark:border-surface-700">
+                    <p class="text-xs text-surface-500">
+                        <i class="pi pi-info-circle mr-1" />
+                        Request a credit top-up when your balance is low.
+                        Admin will verify and add the amount to your balance.
+                        Balance cannot exceed your credit limit of
+                        <strong>{{ formatCurrency(currentBalance?.credit_limit) }}</strong>.
+                    </p>
+                </div>
+
             </div>
 
             <template #footer>

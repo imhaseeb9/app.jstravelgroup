@@ -53,7 +53,10 @@ const router = createRouter({
 
                 // ─── Flights ──────────────────────
                 { path: 'flights/search', name: 'flights.search', component: () => import('@/views/flights/SearchView.vue') },
-
+                { path: 'flights/results', name: 'flights.results', component: () => import('@/views/flights/ResultsView.vue') },
+                { path: 'flights/booking', name: 'flights.booking', component: () => import('@/views/flights/BookingView.vue') },
+                { path: 'flights/confirmation', name: 'flights.confirmation', component: () => import('@/views/flights/ConfirmationView.vue') },
+                
                 // ─── Bookings ─────────────────────
                 { path: 'bookings/flights', name: 'bookings.flights', component: () => import('@/views/bookings/FlightBookingsView.vue') },
                 { path: 'bookings/hotels', name: 'bookings.hotels', component: () => import('@/views/bookings/HotelBookingsView.vue') },
