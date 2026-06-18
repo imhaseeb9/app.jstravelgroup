@@ -145,7 +145,7 @@ const formattedDate = computed(() => {
 .loader-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(10, 12, 20, 0.88);
+    background: rgba(0, 0, 0, 0.5);
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
     z-index: 9999;
@@ -186,15 +186,15 @@ const formattedDate = computed(() => {
 
 /* ── Card ─────────────────────────────────────────── */
 .loader-card {
-    background: linear-gradient(145deg, #0f1320 0%, #141926 50%, #0c1018 100%);
-    border: 1px solid rgba(246, 203, 3, 0.2);
+    background: var(--surface-card);
+    border: 1px solid var(--surface-border);
     border-radius: 24px;
     padding: 2.5rem 3rem;
     width: 100%;
     max-width: 560px;
     box-shadow:
         0 0 0 1px rgba(246,203,3,0.05),
-        0 25px 80px rgba(0,0,0,0.6),
+        0 25px 80px rgba(0,0,0,0.35),
         0 0 60px rgba(246,203,3,0.04) inset;
     animation: cardIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
     position: relative;
@@ -224,7 +224,7 @@ const formattedDate = computed(() => {
 .airport-code {
     font-size: 2.2rem;
     font-weight: 900;
-    color: #ffffff;
+    color: var(--text-color);
     letter-spacing: -0.02em;
     line-height: 1;
     font-family: 'Courier New', monospace;
@@ -233,7 +233,7 @@ const formattedDate = computed(() => {
 .airport-label {
     font-size: 0.7rem;
     font-weight: 600;
-    color: rgba(255,255,255,0.35);
+    color: var(--text-color-secondary);
     text-transform: uppercase;
     letter-spacing: 0.08em;
 }
@@ -340,7 +340,7 @@ const formattedDate = computed(() => {
     align-items: center;
     gap: 0.4rem;
     font-size: 0.8rem;
-    color: rgba(255,255,255,0.5);
+    color: var(--text-color-secondary);
     font-weight: 500;
 }
 
@@ -357,7 +357,7 @@ const formattedDate = computed(() => {
 .progress-bar {
     width: 100%;
     height: 3px;
-    background: rgba(255,255,255,0.06);
+    background: var(--surface-ground);
     border-radius: 100px;
     overflow: hidden;
 }
@@ -365,7 +365,7 @@ const formattedDate = computed(() => {
 .progress-fill {
     height: 100%;
     border-radius: 100px;
-    background: linear-gradient(90deg, #f6cb03, #ffd700, #f6cb03);
+    background: linear-gradient(90deg, #f6cb03, #e6bc00, #f6cb03);
     background-size: 200% 100%;
     animation: progressSlide 2s ease-in-out infinite, shimmer 1.5s linear infinite;
     width: 40%;
@@ -389,7 +389,7 @@ const formattedDate = computed(() => {
     justify-content: center;
     gap: 0.5rem;
     font-size: 0.82rem;
-    color: rgba(255,255,255,0.55);
+    color: var(--text-color-secondary);
     font-weight: 500;
     margin-bottom: 1.75rem;
     letter-spacing: 0.01em;
@@ -428,7 +428,7 @@ const formattedDate = computed(() => {
 
 /* ── Airlines Strip ───────────────────────────────── */
 .airlines-strip {
-    border-top: 1px solid rgba(255,255,255,0.06);
+    border-top: 1px solid var(--surface-border);
     padding-top: 1.25rem;
     display: flex;
     flex-direction: column;
@@ -439,7 +439,7 @@ const formattedDate = computed(() => {
 .airlines-label {
     font-size: 0.7rem;
     font-weight: 600;
-    color: rgba(255,255,255,0.25);
+    color: var(--text-color-secondary);
     text-transform: uppercase;
     letter-spacing: 0.1em;
 }
@@ -454,8 +454,8 @@ const formattedDate = computed(() => {
     width: 36px;
     height: 36px;
     border-radius: 10px;
-    background: rgba(255,255,255,0.05);
-    border: 1px solid rgba(255,255,255,0.08);
+    background: var(--surface-ground);
+    border: 1px solid var(--surface-border);
     display: flex;
     align-items: center;
     justify-content: center;

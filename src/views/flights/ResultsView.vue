@@ -35,20 +35,33 @@ async function fetchResults(params) {
     loading.value = true
     error.value = null
     try {
-        const response = await api.post('/flights/search', {
-            origin:         params.origin,
-            destination:    params.destination,
-            departure_date: params.departure_date,
-            return_date:    params.return_date || undefined,
-            adults:         Number(params.adults) || 1,
-            children:       Number(params.children) || 0,
-            infants:        Number(params.infants) || 0,
-            cabin_class:    params.cabin_class || 'Y',
-            trip_type:      params.trip_type || 'oneway',
-        })
+        const isMultiCity = params.trip_type === 'multicity'
+
+        const payload = isMultiCity
+            ? {
+                trip_type:   'multicity',
+                legs:        typeof params.legs === 'string' ? JSON.parse(params.legs) : params.legs,
+                adults:      Number(params.adults) || 1,
+                children:    Number(params.children) || 0,
+                infants:     Number(params.infants) || 0,
+                cabin_class: params.cabin_class || 'Y',
+            }
+            : {
+                origin:         params.origin,
+                destination:    params.destination,
+                departure_date: params.departure_date,
+                return_date:    params.return_date || undefined,
+                adults:         Number(params.adults) || 1,
+                children:       Number(params.children) || 0,
+                infants:        Number(params.infants) || 0,
+                cabin_class:    params.cabin_class || 'Y',
+                trip_type:      params.trip_type || 'oneway',
+            }
+
+        const response = await api.post('/flights/search', payload)
         allItineraries.value = response.data.itineraries || []
         calendar.value = response.data.calendar || []
-        searchParams.value = response.data.search_params || params
+        searchParams.value = response.data.search_params || payload
         calendarRange.value = response.data.calendar_range || 3
     } catch (err) {
         error.value = err.response?.data?.message || 'Search failed. Please try again.'
@@ -220,6 +233,25 @@ function formatDate(dateStr) {
 const cabinLabels = { Y: 'Economy', W: 'Prem. Economy', C: 'Business', F: 'First' }
 const cabinLabel = computed(() => cabinLabels[route.query.cabin_class] || 'Economy')
 
+// ─── Multi-City Helpers ────────────────────────────────
+const isMultiCity = computed(() => route.query.trip_type === 'multicity')
+
+const parsedLegs = computed(() => {
+    if (!isMultiCity.value) return []
+    try {
+        const raw = route.query.legs
+        return typeof raw === 'string' ? JSON.parse(raw) : (raw || [])
+    } catch (e) {
+        return []
+    }
+})
+
+const multiCityRouteLabel = computed(() =>
+    parsedLegs.value.map(l => l.origin).concat(
+        parsedLegs.value.length ? [parsedLegs.value[parsedLegs.value.length - 1].destination] : []
+    ).join(' → ')
+)
+
 const airlineNames = {
     PK: 'Pakistan Int\'l', EK: 'Emirates', QR: 'Qatar Airways',
     EY: 'Etihad', FZ: 'flydubai', TK: 'Turkish', SV: 'Saudia',
@@ -246,10 +278,12 @@ const timeSlots = [
         <div class="results-topbar">
             <div class="search-summary">
                 <span class="route-label">
-                    {{ route.query.origin }} → {{ route.query.destination }}
+                    <template v-if="isMultiCity">{{ multiCityRouteLabel }}</template>
+                    <template v-else>{{ route.query.origin }} → {{ route.query.destination }}</template>
                 </span>
                 <span class="summary-sep">·</span>
-                <span>{{ route.query.departure_date }}</span>
+                <span v-if="isMultiCity">{{ parsedLegs.length }} flights</span>
+                <span v-else>{{ route.query.departure_date }}</span>
                 <span class="summary-sep">·</span>
                 <span>{{ route.query.adults }} Adult<template v-if="Number(route.query.adults) > 1">s</template></span>
                 <template v-if="Number(route.query.children) > 0">
@@ -264,8 +298,17 @@ const timeSlots = [
             </button>
         </div>
 
+        <!-- Multi-City Leg Summary (replaces calendar strip) -->
+        <div v-if="isMultiCity" class="multicity-summary-strip">
+            <div v-for="(leg, i) in parsedLegs" :key="i" class="multicity-summary-leg">
+                <span class="leg-badge">{{ i + 1 }}</span>
+                <span class="leg-route">{{ leg.origin }} → {{ leg.destination }}</span>
+                <span class="leg-date">{{ leg.date }}</span>
+            </div>
+        </div>
+
         <!-- Calendar Strip -->
-        <div class="calendar-strip-wrap">
+        <div v-else class="calendar-strip-wrap">
             <div class="calendar-strip">
                 <div
                     v-for="day in calendar"
@@ -443,9 +486,9 @@ const timeSlots = [
                 <!-- Loading Skeletons -->
                 <FlightSearchLoader
                     v-if="loading"
-                    :origin="route.query.origin"
-                    :destination="route.query.destination"
-                    :date="route.query.departure_date"
+                    :origin="isMultiCity ? parsedLegs[0]?.origin : route.query.origin"
+                    :destination="isMultiCity ? parsedLegs[parsedLegs.length - 1]?.destination : route.query.destination"
+                    :date="isMultiCity ? parsedLegs[0]?.date : route.query.departure_date"
                     :passengers="Number(route.query.adults) || 1"
                 />
 
@@ -550,6 +593,50 @@ const timeSlots = [
 .modify-btn:hover {
     border-color: #f6cb03;
     color: #f6cb03;
+}
+
+/* ── Multi-City Summary Strip ─────────────────────── */
+.multicity-summary-strip {
+    background: var(--surface-card);
+    border-bottom: 1px solid var(--surface-border);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding: 0.75rem 1.5rem;
+}
+
+.multicity-summary-leg {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.75rem;
+    background: var(--surface-ground);
+    border: 1px solid var(--surface-border);
+    border-radius: 100px;
+    font-size: 0.8rem;
+}
+
+.leg-badge {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #f6cb03;
+    color: #1a1a2e;
+    font-size: 0.68rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.leg-route {
+    font-weight: 600;
+    color: var(--text-color);
+}
+
+.leg-date {
+    color: var(--text-color-secondary);
 }
 
 /* ── Calendar Strip ───────────────────────────────── */

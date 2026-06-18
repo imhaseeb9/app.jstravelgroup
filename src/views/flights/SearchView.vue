@@ -6,6 +6,7 @@ import { useRouter } from 'vue-router'
 const router = useRouter()
 
 // ─── Trip Type ────────────────────────────────────────
+// 'oneway' | 'return' | 'multicity'
 const tripType = ref('oneway')
 
 // ─── Airport AutoComplete ─────────────────────────────
@@ -18,6 +19,7 @@ const destSuggestions    = ref([])
 const popularAirports    = ref([])
 
 // ─── Date Fields ──────────────────────────────────────
+const today = new Date()
 const departureDateObj = ref(null)
 const returnDateObj    = ref(null)
 
@@ -32,7 +34,85 @@ const returnDate = computed(() =>
         : ''
 )
 
-// ─── Passengers ───────────────────────────────────────
+// ─── Multi-City Legs ───────────────────────────────────
+// Each leg: { originAirport, destinationAirport, dateObj, originSuggestions, destSuggestions }
+function createEmptyLeg() {
+    return {
+        id: Math.random().toString(36).slice(2),
+        originAirport: null,
+        destinationAirport: null,
+        dateObj: null,
+        originSuggestions: [],
+        destSuggestions: [],
+    }
+}
+
+const multiCityLegs = ref([createEmptyLeg(), createEmptyLeg()])
+
+const MIN_MULTICITY_LEGS = 2
+const MAX_MULTICITY_LEGS = 6
+
+function addLeg() {
+    if (multiCityLegs.value.length >= MAX_MULTICITY_LEGS) return
+    multiCityLegs.value.push(createEmptyLeg())
+}
+
+function removeLeg(index) {
+    if (multiCityLegs.value.length <= MIN_MULTICITY_LEGS) return
+    multiCityLegs.value.splice(index, 1)
+    delete errors.value[`leg_${index}_origin`]
+    delete errors.value[`leg_${index}_destination`]
+    delete errors.value[`leg_${index}_date`]
+}
+
+// Min selectable date for a leg — today for the first leg, previous leg's date after that
+function legMinDate(index) {
+    if (index === 0) return today
+    const prevDate = multiCityLegs.value[index - 1]?.dateObj
+    return prevDate || today
+}
+
+async function searchLegOrigin(event, index) {
+    const q = event.query?.trim()
+    const leg = multiCityLegs.value[index]
+    if (!q || q.length < 2) {
+        leg.originSuggestions = popularAirports.value
+        return
+    }
+    try {
+        const res = await api.get('/airports/search', { params: { q, limit: 10 } })
+        leg.originSuggestions = res.data
+    } catch (e) {
+        leg.originSuggestions = []
+    }
+}
+
+async function searchLegDestination(event, index) {
+    const q = event.query?.trim()
+    const leg = multiCityLegs.value[index]
+    if (!q || q.length < 2) {
+        leg.destSuggestions = popularAirports.value
+        return
+    }
+    try {
+        const res = await api.get('/airports/search', { params: { q, limit: 10 } })
+        leg.destSuggestions = res.data
+    } catch (e) {
+        leg.destSuggestions = []
+    }
+}
+
+function onLegOriginFocus(index) {
+    const leg = multiCityLegs.value[index]
+    if (!leg.originAirport) leg.originSuggestions = popularAirports.value
+}
+
+function onLegDestFocus(index) {
+    const leg = multiCityLegs.value[index]
+    if (!leg.destinationAirport) leg.destSuggestions = popularAirports.value
+}
+
+
 const adults   = ref(1)
 const children = ref(0)
 const infants  = ref(0)
@@ -156,12 +236,37 @@ function fillRoute(route) {
 }
 
 // ─── Date Helpers ─────────────────────────────────────
-const today = new Date()
 const minReturnDate = computed(() => departureDateObj.value || today)
 
 // ─── Validation ───────────────────────────────────────
 function validate() {
     errors.value = {}
+
+    if (tripType.value === 'multicity') {
+        multiCityLegs.value.forEach((leg, i) => {
+            if (!leg.originAirport?.iata_code) {
+                errors.value[`leg_${i}_origin`] = 'Select departure airport'
+            }
+            if (!leg.destinationAirport?.iata_code) {
+                errors.value[`leg_${i}_destination`] = 'Select arrival airport'
+            }
+            if (leg.originAirport?.iata_code && leg.destinationAirport?.iata_code &&
+                leg.originAirport.iata_code === leg.destinationAirport.iata_code) {
+                errors.value[`leg_${i}_destination`] = 'Must differ from departure airport'
+            }
+            if (!leg.dateObj) {
+                errors.value[`leg_${i}_date`] = 'Select a date'
+            }
+            // Each leg's date must be on/after the previous leg's date
+            if (leg.dateObj && i > 0 && multiCityLegs.value[i - 1].dateObj) {
+                if (leg.dateObj < multiCityLegs.value[i - 1].dateObj) {
+                    errors.value[`leg_${i}_date`] = 'Cannot be before previous leg date'
+                }
+            }
+        })
+        return Object.keys(errors.value).length === 0
+    }
+
     if (!originAirport.value?.iata_code)      errors.value.origin      = 'Please select departure airport'
     if (!destinationAirport.value?.iata_code) errors.value.destination = 'Please select arrival airport'
     if (!departureDate.value)                  errors.value.departureDate = 'Please select a date'
@@ -174,6 +279,26 @@ async function searchFlights() {
     if (!validate()) return
     loading.value = true
     try {
+        if (tripType.value === 'multicity') {
+            const legs = multiCityLegs.value.map(leg => ({
+                origin:      leg.originAirport.iata_code,
+                destination: leg.destinationAirport.iata_code,
+                date:        leg.dateObj.toISOString().split('T')[0],
+            }))
+            router.push({
+                name: 'flights.results',
+                query: {
+                    trip_type: 'multicity',
+                    legs:      JSON.stringify(legs),
+                    adults:    adults.value,
+                    children:  children.value,
+                    infants:   infants.value,
+                    cabin_class: cabinClass.value,
+                },
+            })
+            return
+        }
+
         const params = {
             origin:         originAirport.value.iata_code,
             destination:    destinationAirport.value.iata_code,
@@ -227,13 +352,16 @@ function closeDropdowns(event) {
                     <button class="trip-tab" :class="{ active: tripType === 'return' }" @click="tripType = 'return'">
                         <i class="pi pi-sort-alt"></i> Return
                     </button>
+                    <button class="trip-tab" :class="{ active: tripType === 'multicity' }" @click="tripType = 'multicity'">
+                        <i class="pi pi-map"></i> Multi-City
+                    </button>
                 </div>
 
                 <!-- Form -->
                 <div class="search-form">
 
-                    <!-- Route Row -->
-                    <div class="route-row">
+                    <!-- Route Row (One Way / Return) -->
+                    <div v-if="tripType !== 'multicity'" class="route-row">
 
                         <!-- Origin -->
                         <div class="field-group" :class="{ 'has-error': errors.origin }">
@@ -316,11 +444,134 @@ function closeDropdowns(event) {
 
                     </div>
 
+                    <!-- Multi-City Leg Builder -->
+                    <div v-if="tripType === 'multicity'" class="multicity-legs">
+                        <div
+                            v-for="(leg, index) in multiCityLegs"
+                            :key="leg.id"
+                            class="multicity-leg-row"
+                        >
+                            <div class="leg-number">{{ index + 1 }}</div>
+
+                            <!-- Leg Origin -->
+                            <div class="field-group" :class="{ 'has-error': errors[`leg_${index}_origin`] }">
+                                <label class="field-label">
+                                    <i class="pi pi-map-marker"></i> From
+                                </label>
+                                <AutoComplete
+                                    v-model="leg.originAirport"
+                                    :suggestions="leg.originSuggestions"
+                                    optionLabel="label"
+                                    placeholder="City or Airport"
+                                    :delay="300"
+                                    forceSelection
+                                    fluid
+                                    class="airport-autocomplete"
+                                    :class="{ 'ac-error': errors[`leg_${index}_origin`] }"
+                                    @complete="(e) => searchLegOrigin(e, index)"
+                                    @focus="onLegOriginFocus(index)"
+                                    @item-select="errors[`leg_${index}_origin`] = null"
+                                >
+                                    <template #option="{ option }">
+                                        <div class="airport-option">
+                                            <div class="airport-option-code">{{ option.iata_code }}</div>
+                                            <div class="airport-option-info">
+                                                <div class="airport-option-city">{{ option.city }}, {{ option.country }}</div>
+                                                <div class="airport-option-name">{{ option.name }}</div>
+                                            </div>
+                                        </div>
+                                    </template>
+                                    <template #empty>
+                                        <div class="airport-no-results">
+                                            <i class="pi pi-search"></i> No airports found
+                                        </div>
+                                    </template>
+                                </AutoComplete>
+                                <span v-if="errors[`leg_${index}_origin`]" class="field-error">{{ errors[`leg_${index}_origin`] }}</span>
+                            </div>
+
+                            <!-- Leg Destination -->
+                            <div class="field-group" :class="{ 'has-error': errors[`leg_${index}_destination`] }">
+                                <label class="field-label">
+                                    <i class="pi pi-map-marker"></i> To
+                                </label>
+                                <AutoComplete
+                                    v-model="leg.destinationAirport"
+                                    :suggestions="leg.destSuggestions"
+                                    optionLabel="label"
+                                    placeholder="City or Airport"
+                                    :delay="300"
+                                    forceSelection
+                                    fluid
+                                    class="airport-autocomplete"
+                                    :class="{ 'ac-error': errors[`leg_${index}_destination`] }"
+                                    @complete="(e) => searchLegDestination(e, index)"
+                                    @focus="onLegDestFocus(index)"
+                                    @item-select="errors[`leg_${index}_destination`] = null"
+                                >
+                                    <template #option="{ option }">
+                                        <div class="airport-option">
+                                            <div class="airport-option-code">{{ option.iata_code }}</div>
+                                            <div class="airport-option-info">
+                                                <div class="airport-option-city">{{ option.city }}, {{ option.country }}</div>
+                                                <div class="airport-option-name">{{ option.name }}</div>
+                                            </div>
+                                        </div>
+                                    </template>
+                                    <template #empty>
+                                        <div class="airport-no-results">
+                                            <i class="pi pi-search"></i> No airports found
+                                        </div>
+                                    </template>
+                                </AutoComplete>
+                                <span v-if="errors[`leg_${index}_destination`]" class="field-error">{{ errors[`leg_${index}_destination`] }}</span>
+                            </div>
+
+                            <!-- Leg Date -->
+                            <div class="field-group leg-date-group" :class="{ 'has-error': errors[`leg_${index}_date`] }">
+                                <label class="field-label">
+                                    <i class="pi pi-calendar"></i> Date
+                                </label>
+                                <DatePicker
+                                    v-model="leg.dateObj"
+                                    dateFormat="yy-mm-dd"
+                                    placeholder="Select date"
+                                    :minDate="legMinDate(index)"
+                                    :manualInput="false"
+                                    showIcon
+                                    fluid
+                                    class="field-datepicker"
+                                />
+                                <span v-if="errors[`leg_${index}_date`]" class="field-error">{{ errors[`leg_${index}_date`] }}</span>
+                            </div>
+
+                            <!-- Remove Leg -->
+                            <button
+                                v-if="multiCityLegs.length > MIN_MULTICITY_LEGS"
+                                class="remove-leg-btn"
+                                type="button"
+                                title="Remove this flight"
+                                @click="removeLeg(index)"
+                            >
+                                <i class="pi pi-times"></i>
+                            </button>
+                        </div>
+
+                        <button
+                            v-if="multiCityLegs.length < MAX_MULTICITY_LEGS"
+                            class="add-leg-btn"
+                            type="button"
+                            @click="addLeg"
+                        >
+                            <i class="pi pi-plus"></i> Add Another Flight
+                        </button>
+                    </div>
+
                     <!-- Details Row -->
                     <div class="details-row">
 
                         <!-- Departure Date -->
-                        <div class="field-group" :class="{ 'has-error': errors.departureDate }">
+                        <div v-if="tripType !== 'multicity'" class="field-group" :class="{ 'has-error': errors.departureDate }">
                             <label class="field-label">
                                 <i class="pi pi-calendar"></i> Departure
                             </label>
@@ -338,7 +589,7 @@ function closeDropdowns(event) {
                         </div>
 
                         <!-- Return Date -->
-                        <div class="field-group" :class="{ 'has-error': errors.returnDate }">
+                        <div v-if="tripType !== 'multicity'" class="field-group" :class="{ 'has-error': errors.returnDate }">
                             <label class="field-label">
                                 <i class="pi pi-calendar"></i> Return
                             </label>
@@ -623,6 +874,85 @@ function closeDropdowns(event) {
     border-color: #f6cb03;
     color: #1a1a2e;
     transform: rotate(90deg);
+}
+
+/* ── Multi-City Leg Builder ───────────────────────── */
+.multicity-legs {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.multicity-leg-row {
+    display: grid;
+    grid-template-columns: 28px 1fr 1fr 0.8fr 36px;
+    gap: 0.75rem;
+    align-items: start;
+    padding: 0.6rem;
+    background: var(--surface-ground);
+    border: 1px solid var(--surface-border);
+    border-radius: 10px;
+}
+
+.leg-number {
+    width: 26px;
+    height: 26px;
+    margin-top: 1.6rem;
+    border-radius: 50%;
+    background: #f6cb03;
+    color: #1a1a2e;
+    font-size: 0.78rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.leg-date-group { min-width: 0; }
+
+.remove-leg-btn {
+    width: 32px;
+    height: 32px;
+    margin-top: 1.6rem;
+    border-radius: 50%;
+    border: 1px solid var(--surface-border);
+    background: var(--surface-card);
+    color: var(--text-color-secondary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    flex-shrink: 0;
+}
+
+.remove-leg-btn:hover {
+    background: #ef4444;
+    border-color: #ef4444;
+    color: #fff;
+}
+
+.add-leg-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.7rem;
+    border: 1.5px dashed var(--surface-border);
+    border-radius: 10px;
+    background: transparent;
+    color: var(--text-color-secondary);
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.add-leg-btn:hover {
+    border-color: #f6cb03;
+    color: #f6cb03;
+    background: rgba(246,203,3,0.06);
 }
 
 .details-row {
@@ -924,6 +1254,9 @@ function closeDropdowns(event) {
 @media (max-width: 900px) {
     .details-row { grid-template-columns: 1fr 1fr; }
     .hero-title  { font-size: 1.75rem; }
+    .multicity-leg-row { grid-template-columns: 28px 1fr 1fr; }
+    .leg-date-group { grid-column: 2 / 4; }
+    .remove-leg-btn { grid-column: 1 / 4; margin: 0 auto; }
 }
 
 @media (max-width: 600px) {
@@ -934,5 +1267,9 @@ function closeDropdowns(event) {
     .search-btn   { width: 100%; justify-content: center; }
     .hero-title   { font-size: 1.5rem; }
     .search-card-container { padding: 0 1rem; }
+    .multicity-leg-row { grid-template-columns: 1fr; }
+    .leg-number   { margin: 0 auto; }
+    .leg-date-group { grid-column: auto; }
+    .remove-leg-btn { grid-column: auto; margin: 0 auto; }
 }
 </style>

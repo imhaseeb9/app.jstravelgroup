@@ -110,6 +110,30 @@ const viaStops = computed(() => {
 // ─── Outbound segments ───────────────────────────────
 const outbound = computed(() => props.itinerary.outbound || props.itinerary.segments || [])
 
+// ─── Multi-City Detection ─────────────────────────────
+// Backend populates itinerary.legs with one segment-array per requested OD.
+// >2 legs means this is a multicity itinerary (oneway=1 leg, return=2 legs).
+const isMultiCity = computed(() => (props.itinerary.legs?.length || 0) > 2)
+const legGroups = computed(() => props.itinerary.legs || [outbound.value])
+
+// First/last segment of a given leg (used for the summary row of each leg)
+function legFirstSeg(leg) { return leg[0] || {} }
+function legLastSeg(leg) { return leg[leg.length - 1] || {} }
+
+function legViaStops(leg) {
+    if (leg.length <= 1) return null
+    const stops = leg
+        .slice(0, -1)
+        .map(s => s.arrival_airport)
+        .filter(code => code && code !== 'XNB')
+    if (!stops.length) return null
+    return stops.map(code => cityName(code)).join(', ')
+}
+
+function legDuration(leg) {
+    return leg.reduce((sum, s) => sum + (s.elapsed_time || 0), 0)
+}
+
 // First and last segment for top-level display
 const firstSeg = computed(() => outbound.value[0] || {})
 const lastSeg = computed(() => outbound.value[outbound.value.length - 1] || {})
@@ -175,8 +199,8 @@ const isNextDay = computed(() => {
                 </div>
             </div>
 
-            <!-- Route Timeline -->
-            <div class="route-col">
+            <!-- Route Timeline (One Way / Return) -->
+            <div v-if="!isMultiCity" class="route-col">
 
                 <!-- Departure -->
                 <div class="time-block">
@@ -218,6 +242,24 @@ const isNextDay = computed(() => {
                 </div>
 
             </div>
+
+            <!-- Route Summary (Multi-City) -->
+            <div v-else class="route-col multicity-route-col">
+                <div class="multicity-chain">
+                    <template v-for="(leg, i) in legGroups" :key="i">
+                        <span class="chain-code">{{ legFirstSeg(leg).departure_airport }}</span>
+                        <i class="pi pi-arrow-right chain-arrow"></i>
+                        <span v-if="i === legGroups.length - 1" class="chain-code">{{ legLastSeg(leg).arrival_airport }}</span>
+                    </template>
+                </div>
+                <div class="multicity-meta">
+                    <span class="multicity-flights-badge">{{ legGroups.length }} Flights</span>
+                    <span class="multicity-duration">
+                        <i class="pi pi-clock"></i> {{ formatDuration(itinerary.total_duration) }} total
+                    </span>
+                </div>
+            </div>
+
 
             <!-- Tags Column -->
             <div class="tags-col">
@@ -273,88 +315,108 @@ const isNextDay = computed(() => {
 
                 <!-- Segment Timeline -->
                 <div class="segment-timeline">
-                    <template v-for="(seg, index) in outbound" :key="index">
+                    <template v-for="(leg, legIndex) in legGroups" :key="`leg-${legIndex}`">
 
-                        <!-- Segment Row -->
-                        <div class="segment-row" :class="{ 'is-bus-row': seg.is_bus }">
-
-                            <!-- Left: Time + Date -->
-                            <div class="seg-time-col">
-                                <div class="seg-time">{{ formatTime(seg.departure_datetime) }}</div>
-                                <div class="seg-date">{{ formatDate(seg.departure_datetime) }}</div>
-                            </div>
-
-                            <!-- Center: Dot + Line -->
-                            <div class="seg-dot-col">
-                                <div class="seg-dot" :class="{ 'bus-dot': seg.is_bus }">
-                                    <i v-if="seg.is_bus" class="pi pi-car"></i>
-                                    <i v-else class="pi pi-send"></i>
-                                </div>
-                                <div v-if="index < outbound.length - 1" class="seg-line"></div>
-                            </div>
-
-                            <!-- Right: Info -->
-                            <div class="seg-info">
-                                <div class="seg-airport">
-                                    <span class="seg-code">{{ seg.departure_airport }}</span>
-                                    <span class="seg-city">{{ cityName(seg.departure_airport) }}</span>
-                                    <span v-if="seg.departure_terminal" class="seg-terminal">Terminal {{ seg.departure_terminal }}</span>
-                                </div>
-
-                                <!-- Flight info bar -->
-                                <div class="seg-flight-bar">
-                                    <template v-if="seg.is_bus">
-                                        <span class="seg-detail-item bus-label">
-                                            <i class="pi pi-car"></i> Bus Transfer
-                                        </span>
-                                    </template>
-                                    <template v-else>
-                                        <div class="seg-airline-mini">
-                                            <img
-                                                :src="airlineLogo(seg.operating_airline)"
-                                                :alt="seg.operating_airline"
-                                                class="seg-logo"
-                                                @error="e => e.target.style.display='none'"
-                                            />
-                                            <span>{{ airlineName(seg.operating_airline) }}</span>
-                                            <span class="seg-flight-no">{{ seg.operating_airline }}{{ seg.flight_number }}</span>
-                                        </div>
-                                        <div class="seg-details-row">
-                                            <span class="seg-detail-item">
-                                                <i class="pi pi-clock"></i> {{ formatDuration(seg.elapsed_time) }}
-                                            </span>
-                                            <span class="seg-detail-item">
-                                                <i class="pi pi-tag"></i> {{ seg.booking_class }}
-                                            </span>
-                                            <span v-if="seg.equipment" class="seg-detail-item">
-                                                <i class="pi pi-send"></i> {{ seg.equipment }}
-                                            </span>
-                                            <span v-if="seg.operating_airline !== seg.marketing_airline && seg.marketing_airline" class="seg-detail-item codeshare">
-                                                Marketed by {{ airlineName(seg.marketing_airline) }}
-                                            </span>
-                                        </div>
-                                    </template>
-                                </div>
-
-                                <!-- Arrival of this segment -->
-                                <div class="seg-airport seg-arrival">
-                                    <span class="seg-time-inline">{{ formatTime(seg.arrival_datetime) }}</span>
-                                    <span class="seg-code">{{ seg.arrival_airport }}</span>
-                                    <span class="seg-city">{{ cityName(seg.arrival_airport) }}</span>
-                                    <span v-if="seg.arrival_terminal" class="seg-terminal">Terminal {{ seg.arrival_terminal }}</span>
-                                </div>
-                            </div>
+                        <!-- Leg Header (multicity only — separates each flight in the journey) -->
+                        <div v-if="isMultiCity" class="leg-header">
+                            <span class="leg-header-badge">Flight {{ legIndex + 1 }}</span>
+                            <span class="leg-header-route">
+                                {{ legFirstSeg(leg).departure_airport }} → {{ legLastSeg(leg).arrival_airport }}
+                            </span>
+                            <span v-if="legViaStops(leg)" class="leg-header-via">via {{ legViaStops(leg) }}</span>
+                            <span class="leg-header-duration">{{ formatDuration(legDuration(leg)) }}</span>
                         </div>
 
-                        <!-- Layover between segments -->
-                        <div
-                            v-if="index < outbound.length - 1"
-                            class="layover-row"
-                            :class="{ 'bus-layover': outbound[index+1]?.is_bus }"
-                        >
-                            <i class="pi" :class="outbound[index+1]?.is_bus ? 'pi-car' : 'pi-clock'"></i>
-                            <span v-if="outbound[index+1]?.is_bus">Bus transfer to {{ cityName(outbound[index+1].departure_airport) }}</span>
-                            <span v-else>{{ layoverTime(outbound, index) }} layover in {{ cityName(seg.arrival_airport) }}</span>
+                        <template v-for="(seg, index) in leg" :key="`leg-${legIndex}-seg-${index}`">
+
+                            <!-- Segment Row -->
+                            <div class="segment-row" :class="{ 'is-bus-row': seg.is_bus }">
+
+                                <!-- Left: Time + Date -->
+                                <div class="seg-time-col">
+                                    <div class="seg-time">{{ formatTime(seg.departure_datetime) }}</div>
+                                    <div class="seg-date">{{ formatDate(seg.departure_datetime) }}</div>
+                                </div>
+
+                                <!-- Center: Dot + Line -->
+                                <div class="seg-dot-col">
+                                    <div class="seg-dot" :class="{ 'bus-dot': seg.is_bus }">
+                                        <i v-if="seg.is_bus" class="pi pi-car"></i>
+                                        <i v-else class="pi pi-send"></i>
+                                    </div>
+                                    <div v-if="index < leg.length - 1" class="seg-line"></div>
+                                </div>
+
+                                <!-- Right: Info -->
+                                <div class="seg-info">
+                                    <div class="seg-airport">
+                                        <span class="seg-code">{{ seg.departure_airport }}</span>
+                                        <span class="seg-city">{{ cityName(seg.departure_airport) }}</span>
+                                        <span v-if="seg.departure_terminal" class="seg-terminal">Terminal {{ seg.departure_terminal }}</span>
+                                    </div>
+
+                                    <!-- Flight info bar -->
+                                    <div class="seg-flight-bar">
+                                        <template v-if="seg.is_bus">
+                                            <span class="seg-detail-item bus-label">
+                                                <i class="pi pi-car"></i> Bus Transfer
+                                            </span>
+                                        </template>
+                                        <template v-else>
+                                            <div class="seg-airline-mini">
+                                                <img
+                                                    :src="airlineLogo(seg.operating_airline)"
+                                                    :alt="seg.operating_airline"
+                                                    class="seg-logo"
+                                                    @error="e => e.target.style.display='none'"
+                                                />
+                                                <span>{{ airlineName(seg.operating_airline) }}</span>
+                                                <span class="seg-flight-no">{{ seg.operating_airline }}{{ seg.flight_number }}</span>
+                                            </div>
+                                            <div class="seg-details-row">
+                                                <span class="seg-detail-item">
+                                                    <i class="pi pi-clock"></i> {{ formatDuration(seg.elapsed_time) }}
+                                                </span>
+                                                <span class="seg-detail-item">
+                                                    <i class="pi pi-tag"></i> {{ seg.booking_class }}
+                                                </span>
+                                                <span v-if="seg.equipment" class="seg-detail-item">
+                                                    <i class="pi pi-send"></i> {{ seg.equipment }}
+                                                </span>
+                                                <span v-if="seg.operating_airline !== seg.marketing_airline && seg.marketing_airline" class="seg-detail-item codeshare">
+                                                    Marketed by {{ airlineName(seg.marketing_airline) }}
+                                                </span>
+                                            </div>
+                                        </template>
+                                    </div>
+
+                                    <!-- Arrival of this segment -->
+                                    <div class="seg-airport seg-arrival">
+                                        <span class="seg-time-inline">{{ formatTime(seg.arrival_datetime) }}</span>
+                                        <span class="seg-code">{{ seg.arrival_airport }}</span>
+                                        <span class="seg-city">{{ cityName(seg.arrival_airport) }}</span>
+                                        <span v-if="seg.arrival_terminal" class="seg-terminal">Terminal {{ seg.arrival_terminal }}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Layover between segments (within the same leg) -->
+                            <div
+                                v-if="index < leg.length - 1"
+                                class="layover-row"
+                                :class="{ 'bus-layover': leg[index+1]?.is_bus }"
+                            >
+                                <i class="pi" :class="leg[index+1]?.is_bus ? 'pi-car' : 'pi-clock'"></i>
+                                <span v-if="leg[index+1]?.is_bus">Bus transfer to {{ cityName(leg[index+1].departure_airport) }}</span>
+                                <span v-else>{{ layoverTime(leg, index) }} layover in {{ cityName(seg.arrival_airport) }}</span>
+                            </div>
+
+                        </template>
+
+                        <!-- Ground time between legs (multicity only — e.g. overnight stay before next flight) -->
+                        <div v-if="isMultiCity && legIndex < legGroups.length - 1" class="leg-gap-row">
+                            <i class="pi pi-moon"></i>
+                            <span>Onward to {{ cityName(legGroups[legIndex + 1]?.[0]?.departure_airport) }} on {{ formatDate(legGroups[legIndex + 1]?.[0]?.departure_datetime) }}</span>
                         </div>
 
                     </template>
@@ -480,6 +542,58 @@ const isNextDay = computed(() => {
     align-items: center;
     gap: 1rem;
     padding: 0 1.25rem;
+}
+
+/* ── Multi-City Route Summary ─────────────────────── */
+.multicity-route-col {
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: center;
+    gap: 0.5rem;
+}
+
+.multicity-chain {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.chain-code {
+    font-size: 1rem;
+    font-weight: 800;
+    color: var(--text-color);
+    font-family: monospace;
+}
+
+.chain-arrow {
+    font-size: 0.7rem;
+    color: var(--text-color-secondary);
+}
+
+.multicity-meta {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.6rem;
+}
+
+.multicity-flights-badge {
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: #1a1a2e;
+    background: #f6cb03;
+    padding: 0.15rem 0.55rem;
+    border-radius: 100px;
+}
+
+.multicity-duration {
+    font-size: 0.75rem;
+    color: var(--text-color-secondary);
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
 }
 
 .time-block {
@@ -937,6 +1051,65 @@ const isNextDay = computed(() => {
     border-color: var(--surface-border);
 }
 
+/* ── Leg Header (Multi-City) ──────────────────────── */
+.leg-header {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin: 1rem 0 0.75rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--surface-border);
+}
+
+.segment-timeline .leg-header:first-child {
+    margin-top: 0;
+}
+
+.leg-header-badge {
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: #1a1a2e;
+    background: #f6cb03;
+    padding: 0.15rem 0.5rem;
+    border-radius: 100px;
+    flex-shrink: 0;
+}
+
+.leg-header-route {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--text-color);
+    font-family: monospace;
+}
+
+.leg-header-via {
+    font-size: 0.72rem;
+    color: var(--text-color-secondary);
+    font-style: italic;
+}
+
+.leg-header-duration {
+    font-size: 0.72rem;
+    color: var(--text-color-secondary);
+    margin-left: auto;
+}
+
+/* ── Leg Gap Row (Multi-City ground time between flights) ── */
+.leg-gap-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0.5rem 0 0.5rem 104px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #6366f1;
+    background: rgba(99,102,241,0.08);
+    border: 1px solid rgba(99,102,241,0.2);
+    border-radius: 6px;
+    padding: 0.35rem 0.75rem;
+    width: fit-content;
+}
+
 /* ── Via Stops ────────────────────────────────────── */
 .via-stops {
     font-size: 0.7rem;
@@ -1009,6 +1182,12 @@ const isNextDay = computed(() => {
         padding-left: 0;
         border-top: 1px solid var(--surface-border);
         padding-top: 0.75rem;
+    }
+    .multicity-chain {
+        justify-content: flex-start;
+    }
+    .leg-gap-row {
+        margin-left: 0;
     }
 }
 </style>
